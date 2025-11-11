@@ -1,0 +1,179 @@
+{% load static %}
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Face Finder</title>
+  <link rel="stylesheet" href="{% static 'face_recognition/css/style.css' %}">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js" defer></script>
+</head>
+
+<body>
+  <div class="app-container">
+    <header>
+      <h1>Smart Face Finder</h1>
+      <p>Upload your gallery and a reference photo to find matching faces.</p>
+    </header>
+
+    <form id="uploadForm" enctype="multipart/form-data" class="upload-form">
+      <div class="uploader">
+        <div class="uploader-section">
+          <label>Upload Gallery Images (Multiple)</label>
+          <input id="galleryInput" type="file" name="gallery_images" accept="image/*" multiple required />
+          <div id="galleryPreview" class="preview-grid"></div>
+        </div>
+
+        <div class="uploader-section">
+          <label>Upload Reference Image</label>
+          <input id="refInput" type="file" name="reference_image" accept="image/*" required />
+          <div id="refPreview" class="preview-ref"></div>
+        </div>
+      </div>
+
+      <button type="submit" class="btn primary">Search My Images</button>
+    </form>
+
+    <!-- Loading Overlay -->
+    <div id="loading" class="loading hidden">
+      <div id="lottie" class="lottie"></div>
+      <p class="loading-text">Analyzing faces... please wait</p>
+    </div>
+
+    <!-- Results -->
+    <section id="results" class="hidden results-section">
+      <div class="results-header">
+        <h2>Matched Faces</h2>
+        <button id="downloadZip" class="btn secondary" disabled>⬇ Download ZIP</button>
+      </div>
+      <div id="gallery" class="results-grid"></div>
+    </section>
+  </div>
+
+  <script>
+    const form = document.getElementById("uploadForm");
+    const loader = document.getElementById("loading");
+    const results = document.getElementById("results");
+    const gallery = document.getElementById("gallery");
+    const galleryInput = document.getElementById("galleryInput");
+    const refInput = document.getElementById("refInput");
+    const galleryPreview = document.getElementById("galleryPreview");
+    const refPreview = document.getElementById("refPreview");
+    const downloadBtn = document.getElementById("downloadZip");
+    let matchedKeys = [];
+
+    function clearChildren(node) {
+      while (node.firstChild) node.removeChild(node.firstChild);
+    }
+
+    function renderPreviews(fileList, container, single = false) {
+      clearChildren(container);
+      const files = Array.from(fileList || []);
+      if (files.length === 0) return;
+      const toShow = single ? [files[0]] : files;
+      toShow.forEach((f) => {
+        const img = document.createElement("img");
+        img.className = single ? "thumb-ref" : "thumb";
+        img.src = URL.createObjectURL(f);
+        img.onload = () => URL.revokeObjectURL(img.src);
+        container.appendChild(img);
+      });
+    }
+
+    galleryInput.addEventListener("change", (e) =>
+      renderPreviews(e.target.files, galleryPreview)
+    );
+    refInput.addEventListener("change", (e) =>
+      renderPreviews(e.target.files, refPreview, true)
+    );
+
+    // --- Lottie loader ---
+    document.addEventListener("DOMContentLoaded", () => {
+      const waitForLottie = () => {
+        if (!window.lottie) return setTimeout(waitForLottie, 50);
+        window.lottie.loadAnimation({
+          container: document.getElementById("lottie"),
+          renderer: "svg",
+          loop: true,
+          autoplay: true,
+          path: "/static/loading.json", // ✅ corrected filename
+        });
+      };
+      waitForLottie();
+    });
+
+    // --- Upload and search ---
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      loader.classList.remove("hidden");
+      results.classList.add("hidden");
+      gallery.innerHTML = "";
+      downloadBtn.disabled = true;
+      matchedKeys = [];
+
+      try {
+        const formData = new FormData(form);
+        const res = await fetch("/upload", { method: "POST", body: formData });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || `Request failed with status ${res.status}`);
+        }
+        const data = await res.json();
+        loader.classList.add("hidden");
+        results.classList.remove("hidden");
+
+        if (!data.matches || data.matches.length === 0) {
+          gallery.innerHTML = "<p>No matches found.</p>";
+          return;
+        }
+
+        matchedKeys = data.keys || [];
+        downloadBtn.disabled = matchedKeys.length === 0;
+
+        data.matches.forEach((url) => {
+          const img = document.createElement("img");
+          img.src = url;
+          img.className = "thumb";
+          gallery.appendChild(img);
+        });
+      } catch (err) {
+        loader.classList.add("hidden");
+        results.classList.remove("hidden");
+        gallery.innerHTML = `<p class="error">⚠ ${err?.message || "Something went wrong"}</p>`;
+      }
+    });
+
+    // --- Download ZIP ---
+    downloadBtn.addEventListener("click", async () => {
+      if (!matchedKeys || matchedKeys.length === 0) return;
+      try {
+        downloadBtn.disabled = true;
+        const res = await fetch("/download-zip", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ keys: matchedKeys }),
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || `Request failed with status ${res.status}`);
+        }
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "matches.zip";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (e) {
+        alert(e?.message || "Failed to download ZIP");
+      } finally {
+        downloadBtn.disabled = matchedKeys.length === 0;
+      }
+    });
+  </script>
+</body>
+</html>
