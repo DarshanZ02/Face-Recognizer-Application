@@ -1,0 +1,21 @@
+# Core framework
+Django==5.1.1
+
+# AWS SDK for Python
+boto3==1.35.23
+botocore==1.35.23
+
+# Image and file handling
+Pillow==10.4.0
+
+# For environment variables (optional but useful)
+python-dotenv==1.0.1
+
+# For serving static files in production
+whitenoise==6.6.0
+
+# WSGI server for deployment (e.g., on EC2)
+gunicorn==23.0.0
+
+# Optional - helpful during development
+requests==2.32.3
